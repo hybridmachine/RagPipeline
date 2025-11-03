@@ -6,6 +6,7 @@ pydantic>=2.5.0
 pydantic-settings>=2.1.0
 httpx>=0.25.0
 python-dotenv>=1.0.0
+rich>=13.7.0
 
 # Document processing
 pypdf>=3.17.0

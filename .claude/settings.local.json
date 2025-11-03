@@ -6,7 +6,12 @@
       "Bash(python3:*)",
       "Bash(. venv/bin/activate)",
       "Bash(pip install:*)",
-      "Bash(python -m pytest:*)"
+      "Bash(python -m pytest:*)",
+      "Bash(cat:*)",
+      "Bash(rag status:*)",
+      "Bash(rag --help:*)",
+      "Bash(rag scan:*)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []
