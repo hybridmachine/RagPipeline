@@ -206,11 +206,29 @@ class Embedder:
 
             except httpx.RequestError as e:
                 last_error = e
+                # Log detailed error information
+                error_type = type(e).__name__
+                error_msg = str(e)
+
+                # Check if it's a timeout
+                is_timeout = "timeout" in error_msg.lower() or isinstance(e, httpx.TimeoutException)
+
                 if attempt < max_retries - 1:
                     wait_time = 2 ** attempt
+                    if is_timeout:
+                        print(f"[Retry {attempt + 1}/{max_retries}] Request timeout after {self.config.request_timeout_seconds}s, retrying in {wait_time}s...")
                     await asyncio.sleep(wait_time)
                     continue
-                raise EmbedderError(f"Request failed: {e}") from e
+
+                # Final error with details
+                if is_timeout:
+                    raise EmbedderError(
+                        f"Request timeout after {max_retries} attempts. "
+                        f"Each request timed out after {self.config.request_timeout_seconds}s. "
+                        f"Consider increasing REQUEST_TIMEOUT_SECONDS in .env"
+                    ) from e
+                else:
+                    raise EmbedderError(f"Request failed ({error_type}): {error_msg}") from e
 
             except Exception as e:
                 raise EmbedderError(f"Unexpected error: {e}") from e
