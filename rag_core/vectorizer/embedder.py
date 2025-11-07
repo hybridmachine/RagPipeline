@@ -1,7 +1,10 @@
-"""Embedding generation using HuggingFace Inference Endpoints or TEI.
+"""Embedding generation using HuggingFace or OpenAI-compatible endpoints.
 
-Supports both HuggingFace Inference API and Text Embeddings Inference (TEI) endpoints
-with automatic retries, timeouts, and batch processing.
+Supports:
+- HuggingFace Inference API and Text Embeddings Inference (TEI)
+- OpenAI-compatible embedding servers (LM Studio, vLLM, etc.)
+
+Auto-detects endpoint format and handles retries, timeouts, and batch processing.
 """
 
 import asyncio
@@ -20,12 +23,15 @@ class EmbedderError(Exception):
 
 
 class Embedder:
-    """Generate embeddings using HuggingFace endpoints.
+    """Generate embeddings using HuggingFace or OpenAI-compatible endpoints.
 
     Supports:
     - HuggingFace Inference API (serverless)
     - HuggingFace Inference Endpoints (dedicated)
     - Text Embeddings Inference (TEI) servers
+    - OpenAI-compatible servers (LM Studio, vLLM, etc.)
+
+    Auto-detects endpoint format based on URL pattern (/v1/embeddings = OpenAI format).
     """
 
     def __init__(
@@ -117,11 +123,21 @@ class Embedder:
 
         client = self._get_client()
 
-        # Prepare request payload
-        payload = {
-            "inputs": texts,
-            "normalize": normalize,
-        }
+        # Prepare request payload based on endpoint type
+        # OpenAI-compatible endpoints (LM Studio, etc.) use "input" + "model"
+        # HuggingFace endpoints use "inputs" + "normalize"
+        if "/v1/embeddings" in (self.endpoint_url or ""):
+            # OpenAI-compatible format
+            payload = {
+                "input": texts,
+                "model": self.model_id,
+            }
+        else:
+            # HuggingFace format
+            payload = {
+                "inputs": texts,
+                "normalize": normalize,
+            }
 
         # Retry loop with exponential backoff
         last_error: Optional[Exception] = None
@@ -136,12 +152,16 @@ class Embedder:
                 result = response.json()
 
                 # Handle different response formats
-                # TEI and Inference API return different formats
-                if isinstance(result, list):
-                    # Direct list of embeddings
+                # OpenAI: {"data": [{"embedding": [...]}, ...]}
+                # HuggingFace TEI/Inference: [[...], [...]] or {"embeddings": [[...], [...]]}
+                if isinstance(result, dict) and "data" in result:
+                    # OpenAI-compatible format
+                    embeddings = [item["embedding"] for item in result["data"]]
+                elif isinstance(result, list):
+                    # Direct list of embeddings (HuggingFace TEI)
                     embeddings = result
                 elif isinstance(result, dict) and "embeddings" in result:
-                    # Wrapped in embeddings key
+                    # Wrapped in embeddings key (HuggingFace Inference API)
                     embeddings = result["embeddings"]
                 else:
                     raise EmbedderError(f"Unexpected response format: {result}")

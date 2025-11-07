@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+import sqlite_vec
+
 from rag_core.config import Config
 from rag_core.database.file_tracker import FileTracker
 from rag_core.scanner.chunker import Chunk
@@ -64,21 +66,29 @@ class VectorStore:
             )
             self._conn.row_factory = sqlite3.Row
 
-            # Load sqlite-vec extension if specified
+            # Load sqlite-vec extension
+            # Try custom path first, then auto-detect from sqlite_vec package
             if self.config.sqlite_vec_path:
                 self._conn.enable_load_extension(True)
                 self._conn.load_extension(str(self.config.sqlite_vec_path))
                 self._conn.enable_load_extension(False)
+            else:
+                # Use sqlite_vec.load() which handles the extension path automatically
+                self._conn.enable_load_extension(True)
+                sqlite_vec.load(self._conn)
+                self._conn.enable_load_extension(False)
 
-            # Try to load vec0 module (may be built-in or extension)
+            # Verify vec0 module loaded successfully
             try:
                 cursor = self._conn.execute("SELECT vec_version()")
                 version = cursor.fetchone()
                 if version:
                     print(f"sqlite-vec version: {version[0]}")
-            except sqlite3.OperationalError:
-                # Extension not loaded, this is expected if not using sqlite-vec yet
-                pass
+            except sqlite3.OperationalError as e:
+                raise VectorStoreError(
+                    f"Failed to load sqlite-vec extension. "
+                    f"Ensure sqlite-vec package is installed: pip install sqlite-vec. Error: {e}"
+                ) from e
 
             self._init_schema()
 
