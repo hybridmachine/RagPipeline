@@ -99,6 +99,21 @@ class Embedder:
             raise EmbedderError("Embedder not connected. Use async context manager or call connect().")
         return self._client
 
+    def _prepare_texts(self, texts: list[str]) -> list[str]:
+        """Prepare texts for embedding by optionally appending EOS token.
+
+        Args:
+            texts: List of text strings
+
+        Returns:
+            List of texts with EOS token appended if configured
+        """
+        if self.config.embed_add_eos_token:
+            # Append EOS token to each text
+            eos_token = self.config.embed_add_eos_token
+            return [f"{text}{eos_token}" for text in texts]
+        return texts
+
     async def embed_batch(
         self,
         texts: list[str],
@@ -123,19 +138,22 @@ class Embedder:
 
         client = self._get_client()
 
+        # Prepare texts (add EOS token if configured)
+        prepared_texts = self._prepare_texts(texts)
+
         # Prepare request payload based on endpoint type
         # OpenAI-compatible endpoints (LM Studio, etc.) use "input" + "model"
         # HuggingFace endpoints use "inputs" + "normalize"
         if "/v1/embeddings" in (self.endpoint_url or ""):
             # OpenAI-compatible format
             payload = {
-                "input": texts,
+                "input": prepared_texts,
                 "model": self.model_id,
             }
         else:
             # HuggingFace format
             payload = {
-                "inputs": texts,
+                "inputs": prepared_texts,
                 "normalize": normalize,
             }
 

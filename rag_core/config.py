@@ -46,6 +46,10 @@ class Config(BaseSettings):
         default="BAAI/bge-m3",
         description="Embedding model ID",
     )
+    embed_add_eos_token: Optional[str] = Field(
+        default=None,
+        description="EOS token to append to text before embedding (e.g., '</s>', '<|endoftext|>', 'SEP')",
+    )
 
     # Vector store configuration
     vector_distance: str = Field(
