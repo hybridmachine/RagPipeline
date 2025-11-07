@@ -67,8 +67,14 @@ class OpenAIClient:
             self.endpoint_url = "https://api.openai.com/v1"
 
         # Determine endpoint type
+        # HuggingFace Inference Endpoints often use OpenAI-compatible format
         self.is_huggingface = self._is_huggingface_endpoint(self.endpoint_url)
-        self.is_openai_compatible = "/v1/chat/completions" in self.endpoint_url or not self.is_huggingface
+        # Use OpenAI format if: explicit /v1/ in URL, or Inference Endpoints (which support OpenAI format)
+        self.is_openai_compatible = (
+            "/v1/" in self.endpoint_url
+            or ".endpoints.huggingface.cloud" in self.endpoint_url
+            or not self.is_huggingface
+        )
 
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -109,14 +115,25 @@ class OpenAIClient:
             "Content-Type": "application/json",
         }
 
-        # For HuggingFace, don't use base_url (we'll use full URL)
-        base_url = None if self.is_huggingface else self.endpoint_url
+        # Determine base URL
+        if self.is_openai_compatible:
+            # For OpenAI-compatible endpoints, ensure we have /v1 in the base URL
+            if ".endpoints.huggingface.cloud" in self.endpoint_url and not self.endpoint_url.endswith("/v1"):
+                base_url = f"{self.endpoint_url}/v1"
+            else:
+                base_url = self.endpoint_url
 
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.config.request_timeout_seconds),
-            headers=headers,
-            base_url=base_url,
-        )
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self.config.request_timeout_seconds),
+                headers=headers,
+                base_url=base_url,
+            )
+        else:
+            # For pure HuggingFace Inference API, no base_url
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self.config.request_timeout_seconds),
+                headers=headers,
+            )
 
     async def close(self) -> None:
         """Close HTTP client."""
@@ -184,22 +201,7 @@ Please answer the question based on the context above. Include citation numbers 
         client = self._get_client()
 
         # Build request based on endpoint type
-        if self.is_huggingface:
-            # HuggingFace format: single prompt string
-            system_prompt = self._build_system_prompt()
-            user_prompt = self._build_user_prompt(query, context)
-            full_prompt = f"{system_prompt}\n\n{user_prompt}"
-
-            payload = {
-                "inputs": full_prompt,
-                "parameters": {
-                    "temperature": 0.7,
-                    "max_new_tokens": 1000,
-                    "return_full_text": False,
-                },
-            }
-            url = self.endpoint_url
-        else:
+        if self.is_openai_compatible:
             # OpenAI-compatible format: messages array
             messages = [
                 {"role": "system", "content": self._build_system_prompt()},
@@ -213,6 +215,21 @@ Please answer the question based on the context above. Include citation numbers 
                 "max_tokens": 1000,
             }
             url = "/chat/completions"
+        else:
+            # HuggingFace Inference API format: single prompt string
+            system_prompt = self._build_system_prompt()
+            user_prompt = self._build_user_prompt(query, context)
+            full_prompt = f"{system_prompt}\n\n{user_prompt}"
+
+            payload = {
+                "inputs": full_prompt,
+                "parameters": {
+                    "temperature": 0.7,
+                    "max_new_tokens": 1000,
+                    "return_full_text": False,
+                },
+            }
+            url = self.endpoint_url
 
         # Retry loop with exponential backoff
         last_error: Optional[Exception] = None
@@ -224,15 +241,7 @@ Please answer the question based on the context above. Include citation numbers 
                 result = response.json()
 
                 # Parse response based on endpoint type
-                if self.is_huggingface:
-                    # HuggingFace format: [{"generated_text": "..."}] or {"generated_text": "..."}
-                    if isinstance(result, list) and len(result) > 0:
-                        answer_text = result[0].get("generated_text", "")
-                    elif isinstance(result, dict):
-                        answer_text = result.get("generated_text", "")
-                    else:
-                        raise OpenAIError(f"Unexpected HuggingFace response format: {result}")
-                else:
+                if self.is_openai_compatible:
                     # OpenAI format: {"choices": [{"message": {"content": "..."}}]}
                     if (
                         "choices" not in result
@@ -242,6 +251,14 @@ Please answer the question based on the context above. Include citation numbers 
                         raise OpenAIError(f"Unexpected OpenAI response format: {result}")
 
                     answer_text = result["choices"][0]["message"]["content"]
+                else:
+                    # HuggingFace Inference API format: [{"generated_text": "..."}] or {"generated_text": "..."}
+                    if isinstance(result, list) and len(result) > 0:
+                        answer_text = result[0].get("generated_text", "")
+                    elif isinstance(result, dict):
+                        answer_text = result.get("generated_text", "")
+                    else:
+                        raise OpenAIError(f"Unexpected HuggingFace response format: {result}")
 
                 # Extract token usage if available
                 total_tokens = None

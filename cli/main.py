@@ -307,45 +307,45 @@ def query(
             raise typer.Exit(code=3)
 
         async def run_query() -> None:
-            query_engine = QueryEngine(config)
-            llm_client = OpenAIClient(config)
+            # Use async context managers to ensure proper connection/cleanup
+            async with QueryEngine(config) as query_engine:
+                async with OpenAIClient(config) as llm_client:
+                    # Get query results
+                    result = await query_engine.query(
+                        query_text=q,
+                        k=k,
+                        rerank_top_n=rerank,
+                    )
 
-            # Get query results
-            result = await query_engine.query(
-                query_text=q,
-                k=k,
-                rerank_top_n=rerank,
-            )
+                    # Generate answer
+                    answer = await llm_client.generate_answer(
+                        query=q,
+                        context=result.context,
+                        citations=result.citations,
+                    )
 
-            # Generate answer
-            answer = await llm_client.generate_answer(
-                query=q,
-                context=result.context,
-                citations=result.citations,
-            )
+                    if json:
+                        import orjson
+                        output = orjson.dumps({
+                            "query": q,
+                            "answer": answer.text,
+                            "citations": [
+                                {
+                                    "path": c.doc_path,
+                                    "chunk_id": c.chunk_id,
+                                    "score": c.score,
+                                }
+                                for c in answer.citations
+                            ],
+                        }).decode()
+                        console.print(output)
+                    else:
+                        console.print(f"\n[bold green]Answer:[/bold green]\n{answer.text}\n")
 
-            if json:
-                import orjson
-                output = orjson.dumps({
-                    "query": q,
-                    "answer": answer.text,
-                    "citations": [
-                        {
-                            "path": c.doc_path,
-                            "chunk_id": c.chunk_id,
-                            "score": c.score,
-                        }
-                        for c in answer.citations
-                    ],
-                }).decode()
-                console.print(output)
-            else:
-                console.print(f"\n[bold green]Answer:[/bold green]\n{answer.text}\n")
-
-                if answer.citations:
-                    console.print("[bold]Sources:[/bold]")
-                    for i, citation in enumerate(answer.citations, 1):
-                        console.print(f"{i}. {citation.doc_path} (chunk {citation.chunk_id}, score: {citation.score:.3f})")
+                        if answer.citations:
+                            console.print("[bold]Sources:[/bold]")
+                            for i, citation in enumerate(answer.citations, 1):
+                                console.print(f"{i}. {citation.doc_path} (chunk {citation.chunk_id}, score: {citation.score:.3f})")
 
         asyncio.run(run_query())
         sys.exit(0)
