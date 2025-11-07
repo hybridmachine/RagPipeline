@@ -57,18 +57,32 @@ class Config(BaseSettings):
         description="Batch size for embedding generation",
     )
 
-    # OpenAI configuration
+    # LLM configuration (OpenAI, HuggingFace, or compatible)
+    llm_endpoint_url: Optional[str] = Field(
+        default=None,
+        description="LLM endpoint URL (HuggingFace Inference, OpenAI, or compatible)",
+    )
+    llm_api_token: Optional[str] = Field(
+        default=None,
+        description="API token for LLM endpoint (HF token, OpenAI key, etc.)",
+    )
+    llm_model_id: str = Field(
+        default="gpt-4o",
+        description="LLM model ID (e.g., gpt-4o, meta-llama/Llama-3.1-8B-Instruct)",
+    )
+
+    # Legacy OpenAI configuration (for backward compatibility)
     openai_api_key: Optional[str] = Field(
         default=None,
-        description="OpenAI API key",
+        description="OpenAI API key (legacy, use llm_api_token instead)",
     )
     openai_base_url: Optional[str] = Field(
         default=None,
-        description="Optional OpenAI base URL for self-hosted gateways",
+        description="OpenAI base URL (legacy, use llm_endpoint_url instead)",
     )
     openai_model: str = Field(
         default="gpt-4o",
-        description="OpenAI model to use for generation",
+        description="OpenAI model (legacy, use llm_model_id instead)",
     )
 
     # Chunking configuration

@@ -1,6 +1,11 @@
-"""OpenAI client for LLM answer generation.
+"""LLM client for answer generation.
 
-Handles answer generation using OpenAI's chat completion API with RAG context.
+Supports:
+- OpenAI Chat Completion API
+- HuggingFace Inference API (Text Generation Inference)
+- OpenAI-compatible endpoints (LocalAI, vLLM, etc.)
+
+Auto-detects endpoint format and handles RAG context with citations.
 """
 
 import asyncio
@@ -30,30 +35,63 @@ class Answer:
 
 
 class OpenAIClient:
-    """Client for OpenAI chat completion API.
+    """Client for LLM answer generation (OpenAI, HuggingFace, or compatible).
 
     Handles:
     - Answer generation from query + context
     - Citation preservation
     - Retry logic and error handling
+    - Auto-detects OpenAI vs HuggingFace format
+
+    Supports:
+    - OpenAI API (/v1/chat/completions)
+    - HuggingFace Inference API (serverless and Inference Endpoints)
+    - OpenAI-compatible servers (LocalAI, vLLM, etc.)
     """
 
     def __init__(self, config: Config) -> None:
-        """Initialize OpenAI client.
+        """Initialize LLM client.
 
         Args:
             config: Configuration instance
         """
         self.config = config
-        self.api_key = config.openai_api_key
-        self.base_url = config.openai_base_url or "https://api.openai.com/v1"
-        self.model = config.openai_model
+
+        # Use new config variables with fallback to legacy ones
+        self.api_token = config.llm_api_token or config.openai_api_key
+        self.endpoint_url = config.llm_endpoint_url or config.openai_base_url
+        self.model_id = config.llm_model_id or config.openai_model
+
+        # Default to OpenAI if no endpoint specified
+        if not self.endpoint_url:
+            self.endpoint_url = "https://api.openai.com/v1"
+
+        # Determine endpoint type
+        self.is_huggingface = self._is_huggingface_endpoint(self.endpoint_url)
+        self.is_openai_compatible = "/v1/chat/completions" in self.endpoint_url or not self.is_huggingface
+
         self._client: Optional[httpx.AsyncClient] = None
 
-        if not self.api_key:
+        if not self.api_token:
             raise OpenAIError(
-                "OpenAI API key not configured. Set OPENAI_API_KEY environment variable."
+                "LLM API token not configured. Set LLM_API_TOKEN, HF_API_TOKEN, or OPENAI_API_KEY environment variable."
             )
+
+    def _is_huggingface_endpoint(self, url: str) -> bool:
+        """Check if endpoint is HuggingFace Inference API.
+
+        Args:
+            url: Endpoint URL
+
+        Returns:
+            True if HuggingFace endpoint
+        """
+        hf_indicators = [
+            "huggingface.co",
+            "api-inference.huggingface.co",
+            ".endpoints.huggingface.cloud",
+        ]
+        return any(indicator in url for indicator in hf_indicators)
 
     async def __aenter__(self) -> "OpenAIClient":
         """Async context manager entry."""
@@ -67,14 +105,17 @@ class OpenAIClient:
     async def connect(self) -> None:
         """Initialize HTTP client."""
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {self.api_token}",
             "Content-Type": "application/json",
         }
+
+        # For HuggingFace, don't use base_url (we'll use full URL)
+        base_url = None if self.is_huggingface else self.endpoint_url
 
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.config.request_timeout_seconds),
             headers=headers,
-            base_url=self.base_url,
+            base_url=base_url,
         )
 
     async def close(self) -> None:
@@ -126,7 +167,7 @@ Please answer the question based on the context above. Include citation numbers 
         citations: List[Citation],
         max_retries: int = 3,
     ) -> Answer:
-        """Generate an answer using OpenAI chat completion.
+        """Generate an answer using LLM chat completion.
 
         Args:
             query: The user's question
@@ -142,41 +183,65 @@ Please answer the question based on the context above. Include citation numbers 
         """
         client = self._get_client()
 
-        # Build messages
-        messages = [
-            {"role": "system", "content": self._build_system_prompt()},
-            {"role": "user", "content": self._build_user_prompt(query, context)},
-        ]
+        # Build request based on endpoint type
+        if self.is_huggingface:
+            # HuggingFace format: single prompt string
+            system_prompt = self._build_system_prompt()
+            user_prompt = self._build_user_prompt(query, context)
+            full_prompt = f"{system_prompt}\n\n{user_prompt}"
 
-        # Prepare request
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 1000,
-        }
+            payload = {
+                "inputs": full_prompt,
+                "parameters": {
+                    "temperature": 0.7,
+                    "max_new_tokens": 1000,
+                    "return_full_text": False,
+                },
+            }
+            url = self.endpoint_url
+        else:
+            # OpenAI-compatible format: messages array
+            messages = [
+                {"role": "system", "content": self._build_system_prompt()},
+                {"role": "user", "content": self._build_user_prompt(query, context)},
+            ]
+
+            payload = {
+                "model": self.model_id,
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 1000,
+            }
+            url = "/chat/completions"
 
         # Retry loop with exponential backoff
         last_error: Optional[Exception] = None
         for attempt in range(max_retries):
             try:
-                response = await client.post(
-                    "/chat/completions",
-                    json=payload,
-                )
+                response = await client.post(url, json=payload)
                 response.raise_for_status()
 
                 result = response.json()
 
-                # Extract answer text
-                if (
-                    "choices" not in result
-                    or len(result["choices"]) == 0
-                    or "message" not in result["choices"][0]
-                ):
-                    raise OpenAIError(f"Unexpected response format: {result}")
+                # Parse response based on endpoint type
+                if self.is_huggingface:
+                    # HuggingFace format: [{"generated_text": "..."}] or {"generated_text": "..."}
+                    if isinstance(result, list) and len(result) > 0:
+                        answer_text = result[0].get("generated_text", "")
+                    elif isinstance(result, dict):
+                        answer_text = result.get("generated_text", "")
+                    else:
+                        raise OpenAIError(f"Unexpected HuggingFace response format: {result}")
+                else:
+                    # OpenAI format: {"choices": [{"message": {"content": "..."}}]}
+                    if (
+                        "choices" not in result
+                        or len(result["choices"]) == 0
+                        or "message" not in result["choices"][0]
+                    ):
+                        raise OpenAIError(f"Unexpected OpenAI response format: {result}")
 
-                answer_text = result["choices"][0]["message"]["content"]
+                    answer_text = result["choices"][0]["message"]["content"]
 
                 # Extract token usage if available
                 total_tokens = None
@@ -186,7 +251,7 @@ Please answer the question based on the context above. Include citation numbers 
                 return Answer(
                     text=answer_text,
                     citations=citations,
-                    model=self.model,
+                    model=self.model_id,
                     total_tokens=total_tokens,
                 )
 
