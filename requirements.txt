@@ -1,44 +1,44 @@
 # Core dependencies
-fastapi>=0.104.0
-uvicorn>=0.24.0
+fastapi>=0.115.3  # UPDATED: Critical Starlette CVE-2024-47874 fix
+uvicorn>=0.30.0   # UPDATED: Stay current with security patches
 typer>=0.9.0
-pydantic>=2.5.0
+pydantic>=2.10.0  # UPDATED: Latest version for improvements
 pydantic-settings>=2.1.0
 httpx>=0.25.0
 python-dotenv>=1.0.0
 rich>=13.7.0
 
 # Authentication & Security
-bcrypt>=4.1.0
-pyjwt>=2.8.0
-cryptography>=41.0.0
+bcrypt>=4.2.0      # UPDATED: Latest version
+pyjwt>=2.10.1     # UPDATED: Critical CVE-2024-53861 issuer claim bypass fix
+cryptography>=44.0.1  # UPDATED: Critical CVE-2024-26130 fix + DoS vulnerability patches
 python-multipart>=0.0.6
 
 # Document processing
-pypdf>=3.17.0
+pypdf>=6.1.3       # UPDATED: Critical CVE-2025-62707 DoS fix + CVE-2025-55197 RAM exhaustion fix
 pdfminer.six>=20221105
 markdown-it-py>=3.0.0
-beautifulsoup4>=4.12.0
+beautifulsoup4>=4.14.0  # UPDATED: Latest version
 
 # Vector storage
 sqlite-vec>=0.0.1
-sqlalchemy>=2.0.0
+sqlalchemy>=2.1.0  # UPDATED: Latest stable version
 
 # Text processing
-tiktoken>=0.5.0
-huggingface-hub>=0.20.0
+tiktoken>=0.8.0    # UPDATED: Latest version
+huggingface-hub>=0.24.0  # UPDATED: Latest version (verify model sources)
 numpy>=1.24.0
 
 # Utilities
 orjson>=3.9.0
 
 # Testing
-pytest>=7.4.0
+pytest>=8.3.0      # UPDATED: Latest version
 pytest-cov>=4.1.0
 pytest-asyncio>=0.21.0
 
 # Code quality
-mypy>=1.7.0
+mypy>=1.15.0       # UPDATED: Latest version
 ruff>=0.1.6
 black>=23.11.0
 
