@@ -117,13 +117,14 @@ class FileStore:
     ) -> None:
         """Create symlink from project directory to shared file.
 
+        Creates a symlink if it doesn't exist. If a symlink already exists
+        pointing to the same file, it's left as-is. If it points to a different
+        file, it's replaced.
+
         Args:
             source_hash: SHA-256 hash of file in shared store.
             link_path: Path where symlink should be created.
             relative: If True, use relative path in symlink.
-
-        Raises:
-            FileExistsError: If link already exists.
         """
         link_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -133,6 +134,10 @@ class FileStore:
             # Calculate relative path from link to source
             rel_path = Path(*[".."] * len(link_path.relative_to(self.base_dir).parts)) / source_path.relative_to(self.base_dir)
             source_path = rel_path
+
+        # If symlink already exists, remove it first
+        if link_path.exists() or link_path.is_symlink():
+            link_path.unlink()
 
         link_path.symlink_to(source_path)
 
