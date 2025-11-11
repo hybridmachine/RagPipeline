@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from rag_core.database.file_tracker import FileTracker
 from rag_core.database.vector_store import VectorStore
-from rag_core.logging_config import get_query_logger
+from rag_core.logging_config import get_query_logger, get_embed_logger
 from rag_core.llm.openai_client import OpenAIClient
 from rag_core.projects.project_config import ProjectConfig
 from rag_core.retrieval.query_engine import QueryEngine
@@ -161,6 +161,8 @@ async def embed_project(
         HTTPException: If embedding fails.
     """
     start_time = time.perf_counter()
+    embed_logger = get_embed_logger(project_id=project_id)
+    span_id = embed_logger.log_embed_start(user_id=user_id)
 
     try:
         # Convert project config to core config
@@ -187,13 +189,20 @@ async def embed_project(
 
         total_chunks = 0
         embedded_chunks = 0
+        processed_files = 0
 
         # Process each changed file
         for scanned_file in changed_files:
+            file_path = str(scanned_file.relative_path)
+            file_size = scanned_file.size_bytes
+
             # Read file content
             try:
                 content = scanned_file.absolute_path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, IsADirectoryError):
+            except (UnicodeDecodeError, IsADirectoryError) as e:
+                embed_logger.log_file_error(
+                    span_id, file_path, f"Failed to read file: {e}"
+                )
                 continue
 
             # Chunk the file
@@ -201,29 +210,71 @@ async def embed_project(
                 content, doc_path=scanned_file.relative_path
             )
 
-            total_chunks += len(chunks)
+            chunk_count = len(chunks)
+            total_chunks += chunk_count
 
-            # Generate embeddings for chunks
+            # Log file start
+            embed_logger.log_file_start(
+                span_id,
+                file_path,
+                file_size,
+                chunk_count,
+            )
+
+            # Generate embeddings for chunks in batches
             chunk_texts = [chunk.text for chunk in chunks]
+            batch_size = request.batch_size or 64
+            batch_num = 0
 
             try:
-                embeddings = await embedder.embed_batch(chunk_texts)
+                for i in range(0, len(chunk_texts), batch_size):
+                    batch_num += 1
+                    batch_texts = chunk_texts[i : i + batch_size]
+                    batch_chunk_objects = chunks[i : i + batch_size]
 
-                # Store vectors in vector store
-                vector_store.insert_chunks(chunks, embeddings)
+                    # Time the embedding
+                    embed_start = time.perf_counter()
+                    embeddings = await embedder.embed_batch(batch_texts)
+                    embed_time_ms = (time.perf_counter() - embed_start) * 1000
 
-                embedded_chunks += len(chunks)
+                    # Time the storage
+                    storage_start = time.perf_counter()
+                    vector_store.insert_chunks(batch_chunk_objects, embeddings)
+                    storage_time_ms = (time.perf_counter() - storage_start) * 1000
 
-                # Update file tracker
+                    # Log batch completion
+                    embed_logger.log_batch_complete(
+                        span_id,
+                        file_path,
+                        batch_num,
+                        len(batch_texts),
+                        embed_time_ms,
+                        storage_time_ms,
+                    )
+
+                    embedded_chunks += len(batch_texts)
+
+                # Update file tracker after all batches for this file are done
                 file_tracker.record_file(
                     path=scanned_file.absolute_path,
                     sha256=scanned_file.sha256,
                     size_bytes=scanned_file.size_bytes,
                     mtime_ns=scanned_file.mtime_ns,
                 )
+
+                # Log file completion
+                file_time_ms = (time.perf_counter() - start_time) * 1000
+                embed_logger.log_file_complete(
+                    span_id, file_path, chunk_count, file_time_ms
+                )
+
+                processed_files += 1
+
             except Exception as e:
-                # Log error but continue processing other files
-                print(f"Failed to embed {scanned_file.relative_path}: {e}")
+                # Log batch/file error but continue processing other files
+                embed_logger.log_batch_error(
+                    span_id, file_path, batch_num, f"Embedding failed: {str(e)}"
+                )
                 continue
 
         # Cleanup
@@ -231,6 +282,12 @@ async def embed_project(
         vector_store.close()
 
         elapsed_seconds = time.perf_counter() - start_time
+        elapsed_ms = elapsed_seconds * 1000
+
+        # Log embedding completion
+        embed_logger.log_embed_complete(
+            span_id, processed_files, embedded_chunks, elapsed_ms
+        )
 
         return EmbedResponse(
             embedded_chunks=embedded_chunks,
@@ -239,6 +296,9 @@ async def embed_project(
         )
 
     except Exception as e:
+        embed_logger.log_file_error(
+            span_id, "unknown", f"Embedding process failed: {str(e)}"
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Embedding failed: {str(e)}",
