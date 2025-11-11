@@ -31,6 +31,8 @@ class QueryLogEntry:
     search_time_ms: Optional[float] = None
     llm_time_ms: Optional[float] = None
     error: Optional[str] = None
+    project_id: Optional[str] = None
+    user_id: Optional[str] = None
 
     def to_json(self) -> str:
         """Convert to JSON string."""
@@ -43,22 +45,38 @@ class QueryLogEntry:
 class QueryLogger:
     """Logger for RAG queries with structured JSON output."""
 
-    def __init__(self, log_file: Optional[Path] = None, log_level: str = "INFO"):
+    def __init__(
+        self,
+        log_file: Optional[Path] = None,
+        log_level: str = "INFO",
+        project_id: Optional[str] = None,
+    ):
         """
         Initialize query logger.
 
         Args:
-            log_file: Path to log file (default: .rag/queries.log)
+            log_file: Path to log file (default: .rag/queries.log or .rag/projects/{project_id}/queries.log)
             log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
+            project_id: Optional project ID for per-project logging
         """
-        self.log_file = log_file or Path(".rag/queries.log")
+        # If project_id provided, use project-specific log path
+        if project_id and not log_file:
+            log_file = Path(".rag") / "projects" / project_id / "queries.log"
+        else:
+            log_file = log_file or Path(".rag/queries.log")
+
+        self.log_file = log_file
         self.log_level = getattr(logging, log_level.upper(), logging.INFO)
+        self.project_id = project_id
 
         # Ensure log directory exists
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # Use project ID in logger name if available
+        logger_name = f"rag.query.{project_id}" if project_id else "rag.query"
+
         # Configure logger
-        self.logger = logging.getLogger("rag.query")
+        self.logger = logging.getLogger(logger_name)
         self.logger.setLevel(self.log_level)
         self.logger.handlers.clear()  # Remove any existing handlers
 
@@ -81,13 +99,19 @@ class QueryLogger:
             return text
         return text[:max_length] + "..."
 
-    def log_query_start(self, query_text: str, span_id: Optional[str] = None) -> str:
+    def log_query_start(
+        self,
+        query_text: str,
+        span_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> str:
         """
         Log the start of a query.
 
         Args:
             query_text: The user's query
             span_id: Optional span ID (will generate if not provided)
+            user_id: Optional user ID for the query
 
         Returns:
             span_id for tracking this query
@@ -99,7 +123,9 @@ class QueryLogger:
             span_id=span_id,
             event="query_start",
             level="INFO",
-            query_text=query_text
+            query_text=query_text,
+            project_id=self.project_id,
+            user_id=user_id,
         )
 
         self.logger.info(entry.to_json())
@@ -109,7 +135,7 @@ class QueryLogger:
         self,
         span_id: str,
         chunks: list[dict[str, Any]],
-        search_time_ms: Optional[float] = None
+        search_time_ms: Optional[float] = None,
     ) -> None:
         """
         Log retrieved document chunks with excerpts.
@@ -122,12 +148,16 @@ class QueryLogger:
         # Create excerpts (first 200 chars of each chunk)
         chunk_excerpts = []
         for chunk in chunks:
-            chunk_excerpts.append({
-                "doc_path": chunk.get("doc_path"),
-                "chunk_id": chunk.get("chunk_id"),
-                "score": chunk.get("score"),
-                "text_excerpt": self._truncate_text(chunk.get("text", ""), 200)
-            })
+            chunk_excerpts.append(
+                {
+                    "doc_path": chunk.get("doc_path"),
+                    "chunk_id": chunk.get("chunk_id"),
+                    "score": chunk.get("score"),
+                    "text_excerpt": self._truncate_text(
+                        chunk.get("text", ""), 200
+                    ),
+                }
+            )
 
         entry = QueryLogEntry(
             timestamp=time.time(),
@@ -135,7 +165,8 @@ class QueryLogger:
             event="chunks_retrieved",
             level="INFO",
             retrieved_chunks=chunk_excerpts,
-            search_time_ms=search_time_ms
+            search_time_ms=search_time_ms,
+            project_id=self.project_id,
         )
 
         self.logger.info(entry.to_json())
@@ -146,7 +177,7 @@ class QueryLogger:
         answer: str,
         model: Optional[str] = None,
         total_tokens: Optional[int] = None,
-        llm_time_ms: Optional[float] = None
+        llm_time_ms: Optional[float] = None,
     ) -> None:
         """
         Log the LLM's answer.
@@ -166,7 +197,8 @@ class QueryLogger:
             answer=answer,
             model=model,
             total_tokens=total_tokens,
-            llm_time_ms=llm_time_ms
+            llm_time_ms=llm_time_ms,
+            project_id=self.project_id,
         )
 
         self.logger.info(entry.to_json())
@@ -184,30 +216,37 @@ class QueryLogger:
             span_id=span_id,
             event="query_error",
             level="ERROR",
-            error=error
+            error=error,
+            project_id=self.project_id,
         )
 
         self.logger.error(entry.to_json())
 
 
-# Singleton instance
-_query_logger: Optional[QueryLogger] = None
+# Global logger instances: one per project + global
+_query_loggers: dict[Optional[str], QueryLogger] = {}
 
 
-def get_query_logger(log_file: Optional[Path] = None, log_level: str = "INFO") -> QueryLogger:
+def get_query_logger(
+    log_file: Optional[Path] = None,
+    log_level: str = "INFO",
+    project_id: Optional[str] = None,
+) -> QueryLogger:
     """
-    Get or create the global query logger instance.
+    Get or create a query logger instance (per-project or global).
 
     Args:
-        log_file: Path to log file (default: .rag/queries.log)
+        log_file: Path to log file (default: .rag/queries.log or .rag/projects/{project_id}/queries.log)
         log_level: Logging level
+        project_id: Optional project ID for per-project logging
 
     Returns:
         QueryLogger instance
     """
-    global _query_logger
+    # Use project_id as cache key (None for global logger)
+    cache_key = project_id
 
-    if _query_logger is None:
-        _query_logger = QueryLogger(log_file, log_level)
+    if cache_key not in _query_loggers:
+        _query_loggers[cache_key] = QueryLogger(log_file, log_level, project_id)
 
-    return _query_logger
+    return _query_loggers[cache_key]

@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from rag_core.projects.project_config import ProjectConfig
+from rag_core.logging_config import get_query_logger
 from web.dependencies import get_current_project, get_current_user
 from web.models import (
     EmbedRequest,
@@ -36,11 +37,17 @@ async def query_project(
     Raises:
         HTTPException: If query fails.
     """
+    query_logger = get_query_logger(project_id=project_id)
+    span_id: str | None = None
+
     try:
+        # Initialize query logger with project context
+        span_id = query_logger.log_query_start(request.query, user_id=user_id)
+
         # TODO: Implement RAG query using:
         # - project.to_core_config() to get Config
         # - VectorStore for similarity search
-        # - QueryEngine for RAG pipeline
+        # - QueryEngine for RAG pipeline (pass project_id=project_id, user_id=user_id)
         # - OpenAI client for LLM call
 
         return QueryResponse(
@@ -51,6 +58,8 @@ async def query_project(
         )
 
     except Exception as e:
+        if span_id:
+            query_logger.log_error(span_id, f"Query failed: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Query failed: {str(e)}",

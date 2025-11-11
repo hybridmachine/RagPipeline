@@ -68,6 +68,8 @@ class QueryEngine:
         k: int = 8,
         rerank_top_n: Optional[int] = None,
         distance_metric: str = "cosine",
+        project_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> QueryResult:
         """Execute a query against the RAG system.
 
@@ -76,6 +78,8 @@ class QueryEngine:
             k: Number of chunks to retrieve
             rerank_top_n: If specified, re-rank top N results (not yet implemented)
             distance_metric: Distance metric for vector search
+            project_id: Optional project ID for per-project logging
+            user_id: Optional user ID for logging
 
         Returns:
             QueryResult with context and citations
@@ -87,9 +91,11 @@ class QueryEngine:
 
         start_time = time.perf_counter()
 
-        # Initialize query logger
-        query_logger = get_query_logger(log_level=self.config.log_level)
-        span_id = query_logger.log_query_start(query_text)
+        # Initialize query logger with project context
+        query_logger = get_query_logger(
+            log_level=self.config.log_level, project_id=project_id
+        )
+        span_id = query_logger.log_query_start(query_text, user_id=user_id)
 
         try:
             # Initialize components
