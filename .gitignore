@@ -158,3 +158,6 @@ celerybeat.pid
 # SQLite-vec extensions
 *.so
 sqlite-vec-*.so
+
+# Node
+node_modules/

@@ -80,7 +80,11 @@ class FileTracker:
         return self._conn
 
     def _init_schema(self) -> None:
-        """Initialize database schema."""
+        """Initialize database schema.
+
+        Note: For multi-project setup, this uses the project-specific schema
+        defined in rag_core.projects.schema.PROJECT_SCHEMA
+        """
         conn = self._get_conn()
         try:
             with conn:
