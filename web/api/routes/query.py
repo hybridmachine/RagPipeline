@@ -90,7 +90,7 @@ async def query_project(
         llm_start = time.perf_counter()
         async with OpenAIClient(config) as openai_client:
             answer = await openai_client.generate_answer(
-                query_text=request.query,
+                query=request.query,
                 context=query_result.context,
                 citations=query_result.citations,
             )
