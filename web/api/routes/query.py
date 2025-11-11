@@ -164,25 +164,31 @@ async def embed_project(
     embed_logger = get_embed_logger(project_id=project_id)
     span_id = embed_logger.log_embed_start(user_id=user_id)
 
+    # Initialize components outside try block for cleanup in finally
+    config = project.to_core_config()
+    file_scanner = FileScanner(config)
+    chunker = Chunker(config, strategy=ChunkStrategy.RECURSIVE)
+    embedder = Embedder(config)
+    vector_store = VectorStore(config)
+    file_tracker = FileTracker(config.db_path)
+
     try:
-        # Convert project config to core config
-        config = project.to_core_config()
-
-        # Initialize components
-        file_scanner = FileScanner(config)
-        chunker = Chunker(config, strategy=ChunkStrategy.RECURSIVE)
-        embedder = Embedder(config)
-        vector_store = VectorStore(config)
-        file_tracker = FileTracker(config)
-
         # Connect to vector store
         vector_store.connect()
+
+        # Connect file tracker
+        file_tracker.connect()
 
         # Connect embedder
         await embedder.connect()
 
-        # Scan project files
-        scanned_files = file_scanner.scan(config.root_dir)
+        # Scan project files directory
+        files_dir = project.data_dir / "files"
+        scanned_files = await file_scanner.scan_directory(
+            root=files_dir,
+            tracker=file_tracker,
+            limit=config.max_files_per_run
+        )
 
         # Filter for changed files
         changed_files = [f for f in scanned_files if f.is_changed]
@@ -277,10 +283,6 @@ async def embed_project(
                 )
                 continue
 
-        # Cleanup
-        await embedder.close()
-        vector_store.close()
-
         elapsed_seconds = time.perf_counter() - start_time
         elapsed_ms = elapsed_seconds * 1000
 
@@ -303,3 +305,8 @@ async def embed_project(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Embedding failed: {str(e)}",
         )
+    finally:
+        # Ensure cleanup happens even on error
+        await embedder.close()
+        vector_store.close()
+        file_tracker.close()

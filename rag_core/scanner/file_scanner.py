@@ -208,8 +208,11 @@ class FileScanner:
             ScannedFile if file should be processed, None otherwise
         """
         try:
-            # Get file stats
-            stat = path.stat()
+            # Resolve symlinks to get actual file for reading
+            resolved_path = path.resolve()
+
+            # Get file stats from resolved path
+            stat = resolved_path.stat()
             size_bytes = stat.st_size
             mtime_ns = stat.st_mtime_ns
 
@@ -220,8 +223,8 @@ class FileScanner:
             # Get MIME type
             mime_type, _ = mimetypes.guess_type(str(path))
 
-            # Compute hash
-            sha256 = await self.compute_sha256(path)
+            # Compute hash from resolved path
+            sha256 = await self.compute_sha256(resolved_path)
 
             # Check if file changed
             relative_path = str(path.relative_to(root))
@@ -235,7 +238,7 @@ class FileScanner:
 
             return ScannedFile(
                 path=path,
-                absolute_path=path.resolve(),
+                absolute_path=resolved_path,
                 relative_path=relative_path,
                 sha256=sha256,
                 size_bytes=size_bytes,

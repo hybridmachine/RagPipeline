@@ -12,7 +12,10 @@
       "WebSearch",
       "WebFetch(domain:discuss.huggingface.co)",
       "Bash(pip install:*)",
-      "Bash(python -m pytest tests/ -v --tb=short)"
+      "Bash(python -m pytest tests/ -v --tb=short)",
+      "Bash(pip-audit)",
+      "Bash(npm audit:*)",
+      "Bash(npm outdated:*)"
     ],
     "deny": [],
     "ask": []

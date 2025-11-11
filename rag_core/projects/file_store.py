@@ -131,8 +131,13 @@ class FileStore:
         source_path = self.get_storage_path(source_hash)
 
         if relative:
-            # Calculate relative path from link to source
-            rel_path = Path(*[".."] * len(link_path.relative_to(self.base_dir).parts)) / source_path.relative_to(self.base_dir)
+            # Calculate relative path from link_path's parent to source_path
+            # Both paths are relative to self.base_dir
+            link_rel = link_path.relative_to(self.base_dir)
+            source_rel = source_path.relative_to(self.base_dir)
+            # Count how many levels up from link_path.parent to reach base_dir
+            levels_up = len(link_rel.parent.parts)
+            rel_path = Path(*[".."] * levels_up) / source_rel
             source_path = rel_path
 
         # If symlink already exists, remove it first
