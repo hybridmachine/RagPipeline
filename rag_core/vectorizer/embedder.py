@@ -12,6 +12,7 @@ import time
 from typing import Optional
 
 import httpx
+from huggingface_hub import InferenceClient
 
 from rag_core.config import Config
 
@@ -54,13 +55,18 @@ class Embedder:
         self.api_token = api_token or config.hf_api_token
         self.model_id = model_id or config.embed_model_id
 
-        # If no endpoint URL, use HuggingFace Inference API
-        if not self.endpoint_url:
-            self.endpoint_url = (
-                f"https://api-inference.huggingface.co/models/{self.model_id}"
-            )
+        # Determine if we should use HuggingFace InferenceClient or HTTP client
+        self.use_hf_client = not self.endpoint_url  # Use HF client if no custom endpoint
 
-        self._client: Optional[httpx.AsyncClient] = None
+        if self.use_hf_client:
+            # Will use HuggingFace InferenceClient with provider="hf-inference"
+            self._hf_client: Optional[InferenceClient] = None
+            self._client: Optional[httpx.AsyncClient] = None
+        else:
+            # Will use HTTP client for custom endpoints
+            self._hf_client = None
+            self._client: Optional[httpx.AsyncClient] = None
+
         self._embedding_dim: Optional[int] = None
 
     async def __aenter__(self) -> "Embedder":
@@ -73,31 +79,47 @@ class Embedder:
         await self.close()
 
     async def connect(self) -> None:
-        """Initialize HTTP client."""
-        headers = {}
-        if self.api_token:
-            headers["Authorization"] = f"Bearer {self.api_token}"
+        """Initialize client (HuggingFace or HTTP)."""
+        if self.use_hf_client:
+            # Initialize HuggingFace InferenceClient
+            self._hf_client = InferenceClient(
+                provider="hf-inference",
+                api_key=self.api_token,
+            )
+        else:
+            # Initialize HTTP client for custom endpoints
+            headers = {}
+            if self.api_token:
+                headers["Authorization"] = f"Bearer {self.api_token}"
 
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.config.request_timeout_seconds),
-            headers=headers,
-            limits=httpx.Limits(
-                max_connections=self.config.max_concurrent_requests,
-                max_keepalive_connections=self.config.max_concurrent_requests,
-            ),
-        )
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self.config.request_timeout_seconds),
+                headers=headers,
+                limits=httpx.Limits(
+                    max_connections=self.config.max_concurrent_requests,
+                    max_keepalive_connections=self.config.max_concurrent_requests,
+                ),
+            )
 
     async def close(self) -> None:
-        """Close HTTP client."""
+        """Close clients."""
         if self._client:
             await self._client.aclose()
             self._client = None
+        # HuggingFace InferenceClient doesn't need explicit closing
+        self._hf_client = None
 
-    def _get_client(self) -> httpx.AsyncClient:
-        """Get active client or raise error."""
+    def _get_http_client(self) -> httpx.AsyncClient:
+        """Get active HTTP client or raise error."""
         if self._client is None:
             raise EmbedderError("Embedder not connected. Use async context manager or call connect().")
         return self._client
+
+    def _get_hf_client(self) -> InferenceClient:
+        """Get active HuggingFace client or raise error."""
+        if self._hf_client is None:
+            raise EmbedderError("Embedder not connected. Use async context manager or call connect().")
+        return self._hf_client
 
     def _prepare_texts(self, texts: list[str]) -> list[str]:
         """Prepare texts for embedding by optionally appending EOS token.
@@ -136,10 +158,95 @@ class Embedder:
         if not texts:
             return []
 
-        client = self._get_client()
-
         # Prepare texts (add EOS token if configured)
         prepared_texts = self._prepare_texts(texts)
+
+        # Use HuggingFace InferenceClient or HTTP client
+        if self.use_hf_client:
+            return await self._embed_with_hf_client(prepared_texts, max_retries)
+        else:
+            return await self._embed_with_http(prepared_texts, normalize, max_retries)
+
+    async def _embed_with_hf_client(
+        self,
+        texts: list[str],
+        max_retries: int = 3,
+    ) -> list[list[float]]:
+        """Embed using HuggingFace InferenceClient.
+
+        Args:
+            texts: List of text strings to embed
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            List of embedding vectors
+
+        Raises:
+            EmbedderError: If embedding generation fails
+        """
+        hf_client = self._get_hf_client()
+
+        # Retry loop with exponential backoff
+        last_error: Optional[Exception] = None
+        for attempt in range(max_retries):
+            try:
+                # Call HuggingFace feature_extraction for each text
+                # Note: feature_extraction returns a numpy array or list
+                embeddings = []
+                for text in texts:
+                    result = hf_client.feature_extraction(
+                        text,
+                        model=self.model_id,
+                    )
+                    # Convert result to list of floats
+                    if hasattr(result, 'tolist'):
+                        # NumPy array
+                        embeddings.append(result.tolist())
+                    else:
+                        # Already a list
+                        embeddings.append(list(result))
+
+                # Cache embedding dimension on first successful call
+                if embeddings and self._embedding_dim is None:
+                    self._embedding_dim = len(embeddings[0])
+
+                return embeddings
+
+            except Exception as e:
+                last_error = e
+                # Check if it's a rate limit or server error (retryable)
+                error_str = str(e).lower()
+                if 'rate limit' in error_str or '429' in error_str or '503' in error_str:
+                    if attempt < max_retries - 1:
+                        # Exponential backoff: 1s, 2s, 4s
+                        wait_time = 2 ** attempt
+                        await asyncio.sleep(wait_time)
+                        continue
+                # Other errors are not retryable
+                raise EmbedderError(f"HuggingFace embedding failed: {e}") from e
+
+        raise EmbedderError(f"Embedding failed after {max_retries} attempts: {last_error}")
+
+    async def _embed_with_http(
+        self,
+        texts: list[str],
+        normalize: bool = True,
+        max_retries: int = 3,
+    ) -> list[list[float]]:
+        """Embed using HTTP client for custom endpoints.
+
+        Args:
+            texts: List of text strings to embed
+            normalize: Whether to normalize embeddings
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            List of embedding vectors
+
+        Raises:
+            EmbedderError: If embedding generation fails
+        """
+        client = self._get_http_client()
 
         # Prepare request payload based on endpoint type
         # OpenAI-compatible endpoints (LM Studio, etc.) use "input" + "model"
@@ -147,13 +254,13 @@ class Embedder:
         if "/v1/embeddings" in (self.endpoint_url or ""):
             # OpenAI-compatible format
             payload = {
-                "input": prepared_texts,
+                "input": texts,
                 "model": self.model_id,
             }
         else:
             # HuggingFace format
             payload = {
-                "inputs": prepared_texts,
+                "inputs": texts,
                 "normalize": normalize,
             }
 

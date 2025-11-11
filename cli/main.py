@@ -15,6 +15,7 @@ from rich.table import Table
 
 from rag_core.config import Config, get_config, set_config
 from rag_core.database.file_tracker import FileTracker
+from rag_core.logging_config import get_query_logger
 
 app = typer.Typer(
     name="rag",
@@ -307,6 +308,8 @@ def query(
             raise typer.Exit(code=3)
 
         async def run_query() -> None:
+            import time
+
             # Use async context managers to ensure proper connection/cleanup
             async with QueryEngine(config) as query_engine:
                 async with OpenAIClient(config) as llm_client:
@@ -318,10 +321,22 @@ def query(
                     )
 
                     # Generate answer
+                    llm_start = time.perf_counter()
                     answer = await llm_client.generate_answer(
                         query=q,
                         context=result.context,
                         citations=result.citations,
+                    )
+                    llm_time_ms = (time.perf_counter() - llm_start) * 1000
+
+                    # Log the answer
+                    query_logger = get_query_logger(log_level=config.log_level)
+                    query_logger.log_answer(
+                        span_id=result.span_id,
+                        answer=answer.text,
+                        model=answer.model,
+                        total_tokens=answer.total_tokens,
+                        llm_time_ms=llm_time_ms,
                     )
 
                     if json:

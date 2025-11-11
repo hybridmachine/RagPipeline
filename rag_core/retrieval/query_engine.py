@@ -10,6 +10,7 @@ from typing import List, Optional
 from rag_core.config import Config
 from rag_core.database.vector_store import Hit, VectorStore
 from rag_core.vectorizer.embedder import Embedder
+from rag_core.logging_config import get_query_logger
 
 
 class QueryEngineError(Exception):
@@ -38,6 +39,7 @@ class QueryResult:
     citations: List[Citation]
     total_chunks: int
     search_time_ms: float
+    span_id: str  # For tracking query across logging
 
 
 class QueryEngine:
@@ -85,6 +87,10 @@ class QueryEngine:
 
         start_time = time.perf_counter()
 
+        # Initialize query logger
+        query_logger = get_query_logger(log_level=self.config.log_level)
+        span_id = query_logger.log_query_start(query_text)
+
         try:
             # Initialize components
             if self._embedder is None:
@@ -104,6 +110,19 @@ class QueryEngine:
                 k=k,
                 distance_metric=distance_metric,
             )
+
+            # Log retrieved chunks with excerpts
+            chunks_for_log = [
+                {
+                    "doc_path": hit.doc_path,
+                    "chunk_id": hit.chunk_id,
+                    "score": hit.score,
+                    "text": hit.text,
+                }
+                for hit in hits
+            ]
+            search_time_ms = (time.perf_counter() - start_time) * 1000
+            query_logger.log_retrieved_chunks(span_id, chunks_for_log, search_time_ms)
 
             # Optional re-ranking (placeholder for future implementation)
             if rerank_top_n and rerank_top_n < len(hits):
@@ -142,9 +161,11 @@ class QueryEngine:
                 citations=citations,
                 total_chunks=len(hits),
                 search_time_ms=search_time_ms,
+                span_id=span_id,
             )
 
         except Exception as e:
+            query_logger.log_error(span_id, f"Query execution failed: {e}")
             raise QueryEngineError(f"Query execution failed: {e}") from e
 
     async def close(self) -> None:

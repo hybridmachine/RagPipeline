@@ -58,20 +58,29 @@ class OpenAIClient:
         self.config = config
 
         # Use new config variables with fallback to legacy ones
-        self.api_token = config.llm_api_token or config.openai_api_key
+        # Priority: LLM_API_TOKEN > HF_API_TOKEN > OPENAI_API_KEY
+        self.api_token = config.llm_api_token or config.hf_api_token or config.openai_api_key
         self.endpoint_url = config.llm_endpoint_url or config.openai_base_url
         self.model_id = config.llm_model_id or config.openai_model
 
-        # Default to OpenAI if no endpoint specified
+        # Default endpoint logic
         if not self.endpoint_url:
-            self.endpoint_url = "https://api.openai.com/v1"
+            # If we have HF or LLM token, auto-construct HF Inference API URL (OpenAI-compatible format)
+            if self.api_token and (self.api_token.startswith("hf_") or config.llm_api_token or config.hf_api_token):
+                self.endpoint_url = "https://router.huggingface.co/v1"
+                # Add provider suffix to model if not already present
+                if ":hf-inference" not in self.model_id:
+                    self.model_id = f"{self.model_id}:hf-inference"
+            else:
+                # Otherwise default to OpenAI
+                self.endpoint_url = "https://api.openai.com/v1"
 
         # Determine endpoint type
         # HuggingFace Inference Endpoints often use OpenAI-compatible format
         self.is_huggingface = self._is_huggingface_endpoint(self.endpoint_url)
-        # Use OpenAI format if: explicit /v1/ in URL, or Inference Endpoints (which support OpenAI format)
+        # Use OpenAI format if: explicit /v1 in URL, or Inference Endpoints (which support OpenAI format)
         self.is_openai_compatible = (
-            "/v1/" in self.endpoint_url
+            "/v1" in self.endpoint_url  # Check for /v1 or /v1/
             or ".endpoints.huggingface.cloud" in self.endpoint_url
             or not self.is_huggingface
         )
@@ -94,7 +103,8 @@ class OpenAIClient:
         """
         hf_indicators = [
             "huggingface.co",
-            "api-inference.huggingface.co",
+            "router.huggingface.co",
+            "api-inference.huggingface.co",  # Legacy endpoint
             ".endpoints.huggingface.cloud",
         ]
         return any(indicator in url for indicator in hf_indicators)

@@ -2,16 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(tree:*)",
-      "Bash(python3 -m pytest:*)",
+      "Bash(find:*)",
+      "Bash(python -m mypy:*)",
+      "Bash(sqlite3:*)",
       "Bash(python3:*)",
-      "Bash(. venv/bin/activate)",
-      "Bash(pip install:*)",
-      "Bash(python -m pytest:*)",
-      "Bash(cat:*)",
-      "Bash(rag status:*)",
-      "Bash(rag --help:*)",
-      "Bash(rag scan:*)",
-      "Bash(chmod:*)"
+      "Bash(pip3 install:*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(python -m cli.main:*)",
+      "WebSearch",
+      "WebFetch(domain:discuss.huggingface.co)",
+      "Bash(pip install:*)"
     ],
     "deny": [],
     "ask": []
