@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+import traceback
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from rag_core.database.file_tracker import FileTracker
@@ -87,13 +88,12 @@ async def query_project(
 
         # Generate answer using LLM
         llm_start = time.perf_counter()
-        openai_client = OpenAIClient(config)
-
-        answer = await openai_client.generate_answer(
-            query_text=request.query,
-            context=query_result.context,
-            citations=query_result.citations,
-        )
+        async with OpenAIClient(config) as openai_client:
+            answer = await openai_client.generate_answer(
+                query_text=request.query,
+                context=query_result.context,
+                citations=query_result.citations,
+            )
 
         llm_time_ms = (time.perf_counter() - llm_start) * 1000
 
@@ -129,8 +129,10 @@ async def query_project(
         )
 
     except Exception as e:
+        # Log error with full stack trace for debugging
+        error_msg = f"Query failed: {str(e)}\n{traceback.format_exc()}"
         if span_id:
-            query_logger.log_error(span_id, f"Query failed: {str(e)}")
+            query_logger.log_error(span_id, error_msg)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Query failed: {str(e)}",

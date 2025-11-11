@@ -71,17 +71,25 @@ class ProjectConfig:
 
         Returns:
             Config instance with project settings applied.
+
+        Note:
+            Falls back to environment variables for any unset project settings.
+            Priority: project config > environment variables > hardcoded defaults
         """
+        # Get global config to use as fallback for unset project settings
+        from rag_core.config import get_config
+        global_config = get_config()
+
         return Config(
             db_path=self.vector_db_path,
             sqlite_vec_path=sqlite_vec_path,
-            hf_endpoint_url=self.hf_endpoint_url,
-            hf_api_token=self.hf_api_token,
-            embed_model_id=self.embed_model_id,
-            embed_add_eos_token=self.embed_add_eos_token,
-            llm_endpoint_url=self.llm_endpoint_url,
-            llm_api_token=self.llm_api_token,
-            llm_model_id=self.llm_model_id,
+            hf_endpoint_url=self.hf_endpoint_url or global_config.hf_endpoint_url,
+            hf_api_token=self.hf_api_token or global_config.hf_api_token,
+            embed_model_id=self.embed_model_id or global_config.embed_model_id,
+            embed_add_eos_token=self.embed_add_eos_token or global_config.embed_add_eos_token,
+            llm_endpoint_url=self.llm_endpoint_url or global_config.llm_endpoint_url,
+            llm_api_token=self.llm_api_token or global_config.llm_api_token,
+            llm_model_id=self.llm_model_id or global_config.llm_model_id,
             chunk_target_tokens=self.chunk_target_tokens,
             chunk_overlap_tokens=self.chunk_overlap_tokens,
             retrieval_k=self.retrieval_k,
