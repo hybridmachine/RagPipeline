@@ -117,6 +117,13 @@ class QueryEngine:
                 distance_metric=distance_metric,
             )
 
+            # Check if no embeddings have been added yet
+            if not hits:
+                query_logger.log_warning(
+                    span_id,
+                    "No embeddings found in vector store. Please upload and embed documents first.",
+                )
+
             # Log retrieved chunks with excerpts
             chunks_for_log = [
                 {

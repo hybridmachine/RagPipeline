@@ -369,6 +369,26 @@ class VectorStore:
         conn = self._get_conn()
 
         try:
+            # Check if chunk_vectors table exists
+            cursor = conn.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='chunk_vectors'
+                """
+            )
+            if cursor.fetchone() is None:
+                # Vector table doesn't exist yet (no embeddings added)
+                return []
+
+            # Check if there are any embedded chunks
+            cursor = conn.execute(
+                "SELECT COUNT(*) as count FROM chunks WHERE embedding_status = 'embedded'"
+            )
+            result = cursor.fetchone()
+            if result and result["count"] == 0:
+                # No embeddings have been added yet
+                return []
+
             # Serialize query vector
             query_bytes = self._serialize_vector(query_vector)
 

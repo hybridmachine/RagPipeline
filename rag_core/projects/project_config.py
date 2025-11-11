@@ -74,22 +74,34 @@ class ProjectConfig:
 
         Note:
             Falls back to environment variables for any unset project settings.
-            Priority: project config > environment variables > hardcoded defaults
+            Priority: project config (if set) > environment variables > hardcoded defaults
+            Only uses project value if it's NOT the hardcoded default.
         """
         # Get global config to use as fallback for unset project settings
         from rag_core.config import get_config
         global_config = get_config()
+
+        # For values that have hardcoded defaults in ProjectConfig, we need to check
+        # if they're actually set per-project or just using the default
+        # If the project value matches the ProjectConfig default, use global config instead
+        embed_model_id = self.embed_model_id
+        if embed_model_id == "BAAI/bge-m3":  # ProjectConfig default
+            embed_model_id = global_config.embed_model_id or "BAAI/bge-m3"
+
+        llm_model_id = self.llm_model_id
+        if llm_model_id == "gpt-4o":  # ProjectConfig default
+            llm_model_id = global_config.llm_model_id or "gpt-4o"
 
         return Config(
             db_path=self.vector_db_path,
             sqlite_vec_path=sqlite_vec_path,
             hf_endpoint_url=self.hf_endpoint_url or global_config.hf_endpoint_url,
             hf_api_token=self.hf_api_token or global_config.hf_api_token,
-            embed_model_id=self.embed_model_id or global_config.embed_model_id,
+            embed_model_id=embed_model_id,
             embed_add_eos_token=self.embed_add_eos_token or global_config.embed_add_eos_token,
             llm_endpoint_url=self.llm_endpoint_url or global_config.llm_endpoint_url,
             llm_api_token=self.llm_api_token or global_config.llm_api_token,
-            llm_model_id=self.llm_model_id or global_config.llm_model_id,
+            llm_model_id=llm_model_id,
             chunk_target_tokens=self.chunk_target_tokens,
             chunk_overlap_tokens=self.chunk_overlap_tokens,
             retrieval_k=self.retrieval_k,
