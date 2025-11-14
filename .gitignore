@@ -161,3 +161,4 @@ sqlite-vec-*.so
 
 # Node
 node_modules/
+rag_architecture
