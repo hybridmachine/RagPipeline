@@ -124,6 +124,7 @@ class VectorStore:
                         end_char INTEGER,
                         text TEXT NOT NULL,
                         sha256 TEXT NOT NULL,
+                        chunk_mode TEXT DEFAULT 'recursive',
                         section TEXT,
                         mime TEXT,
                         token_count INTEGER,
@@ -158,6 +159,18 @@ class VectorStore:
 
                 # Note: chunk_vectors table will be created dynamically
                 # when we know the embedding dimension
+
+                # Migrate existing tables to add chunk_mode column if it doesn't exist
+                try:
+                    conn.execute("SELECT chunk_mode FROM chunks LIMIT 1")
+                except sqlite3.OperationalError:
+                    # Column doesn't exist, add it
+                    conn.execute(
+                        """
+                        ALTER TABLE chunks
+                        ADD COLUMN chunk_mode TEXT DEFAULT 'recursive'
+                        """
+                    )
 
         except sqlite3.Error as e:
             raise VectorStoreError(f"Failed to initialize schema: {e}") from e
@@ -240,8 +253,8 @@ class VectorStore:
                         """
                         INSERT OR REPLACE INTO chunks
                             (doc_path, chunk_id, start_char, end_char, text,
-                             sha256, section, token_count, embedding_status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                             sha256, chunk_mode, section, token_count, embedding_status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
                         """,
                         (
                             chunk.doc_path,
@@ -250,6 +263,7 @@ class VectorStore:
                             chunk.end_char,
                             chunk.text,
                             sha256,
+                            chunk.chunk_mode,
                             chunk.section,
                             chunk.token_count,
                         ),
@@ -304,8 +318,8 @@ class VectorStore:
                             """
                             INSERT INTO chunks
                                 (doc_path, chunk_id, start_char, end_char, text,
-                                 sha256, section, token_count, embedding_status)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'embedded')
+                                 sha256, chunk_mode, section, token_count, embedding_status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'embedded')
                             """,
                             (
                                 chunk.doc_path,
@@ -314,6 +328,7 @@ class VectorStore:
                                 chunk.end_char,
                                 chunk.text,
                                 "",  # SHA will be updated separately
+                                chunk.chunk_mode,
                                 chunk.section,
                                 chunk.token_count,
                             ),
@@ -443,7 +458,7 @@ class VectorStore:
             cursor = conn.execute(
                 """
                 SELECT id, doc_path, chunk_id, start_char, end_char,
-                       text, section, token_count
+                       text, chunk_mode, section, token_count
                 FROM chunks
                 WHERE embedding_status = 'pending'
                 ORDER BY created_at
@@ -459,6 +474,7 @@ class VectorStore:
                         chunk_id=row["chunk_id"],
                         start_char=row["start_char"],
                         end_char=row["end_char"],
+                        chunk_mode=row["chunk_mode"] or "recursive",
                         section=row["section"],
                         token_count=row["token_count"],
                     )
@@ -481,7 +497,7 @@ class VectorStore:
             cursor = conn.execute(
                 """
                 SELECT id, doc_path, chunk_id, start_char, end_char,
-                       text, section, token_count
+                       text, chunk_mode, section, token_count
                 FROM chunks
                 ORDER BY doc_path, chunk_id
                 """
@@ -496,6 +512,7 @@ class VectorStore:
                         chunk_id=row["chunk_id"],
                         start_char=row["start_char"],
                         end_char=row["end_char"],
+                        chunk_mode=row["chunk_mode"] or "recursive",
                         section=row["section"],
                         token_count=row["token_count"],
                     )
