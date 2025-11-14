@@ -1,6 +1,6 @@
 # RAG Pipeline
 
-A production-ready Retrieval-Augmented Generation (RAG) system with HuggingFace embeddings and OpenAI LLM integration.
+A experimental Retrieval-Augmented Generation (RAG) system with HuggingFace embeddings and OpenAI LLM integration. This code is created mostly by Claude with human guidance.
 
 ## Features
 
