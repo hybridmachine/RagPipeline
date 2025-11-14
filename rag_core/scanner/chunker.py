@@ -3,6 +3,7 @@
 Provides recursive token splitting, markdown-aware, and code-aware chunking.
 """
 
+import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -12,6 +13,8 @@ from typing import List, Optional
 import tiktoken
 
 from rag_core.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class ChunkStrategy(str, Enum):
@@ -31,6 +34,7 @@ class Chunk:
     chunk_id: int
     start_char: int
     end_char: int
+    chunk_mode: str = "recursive"  # Strategy used: recursive, markdown, code
     section: Optional[str] = None
     token_count: Optional[int] = None
 
@@ -126,6 +130,7 @@ class Chunker:
                     chunk_id=0,
                     start_char=0,
                     end_char=len(text),
+                    chunk_mode="recursive",
                     token_count=total_tokens,
                 )
             ]
@@ -157,6 +162,7 @@ class Chunker:
                     chunk_id=chunk_id,
                     start_char=start_char,
                     end_char=min(end_char, len(text)),
+                    chunk_mode="recursive",
                     token_count=len(chunk_tokens),
                 )
             )
@@ -210,6 +216,7 @@ class Chunker:
                         chunk_id=chunk_id,
                         start_char=current_start_char,
                         end_char=current_start_char + len(section_text),
+                        chunk_mode="markdown",
                         section=current_section,
                         token_count=token_count,
                     )
@@ -226,6 +233,7 @@ class Chunker:
                             chunk_id=chunk_id,
                             start_char=current_start_char + sub_chunk.start_char,
                             end_char=current_start_char + sub_chunk.end_char,
+                            chunk_mode="markdown",
                             section=current_section,
                             token_count=sub_chunk.token_count,
                         )
@@ -317,6 +325,7 @@ class Chunker:
                         chunk_id=chunk_id,
                         start_char=current_start_char,
                         end_char=current_start_char + len(chunk_text),
+                        chunk_mode="code",
                         token_count=token_count,
                     )
                 )
@@ -332,6 +341,7 @@ class Chunker:
                             chunk_id=chunk_id,
                             start_char=current_start_char + sub_chunk.start_char,
                             end_char=current_start_char + sub_chunk.end_char,
+                            chunk_mode="code",
                             token_count=sub_chunk.token_count,
                         )
                     )
@@ -405,6 +415,16 @@ class Chunker:
                 ".rs",
             ):
                 chunk_strategy = ChunkStrategy.CODE
+
+        # Log the chunk mode being used
+        logger.info(
+            f"Chunking file with {chunk_strategy.value} mode",
+            extra={
+                "doc_path": doc_path,
+                "chunk_mode": chunk_strategy.value,
+                "file_ext": Path(doc_path).suffix.lower(),
+            },
+        )
 
         # Apply strategy
         if chunk_strategy == ChunkStrategy.MARKDOWN:
