@@ -71,6 +71,12 @@ class ProjectResponse(BaseModel):
     created_at: Optional[datetime] = None
     embed_model_id: str
     llm_model_id: str
+    hf_endpoint_url: Optional[str] = None
+    hf_api_token_set: bool = False  # Don't return actual token, just whether it's set
+    llm_endpoint_url: Optional[str] = None
+    llm_api_token_set: bool = False  # Don't return actual token, just whether it's set
+    chunk_target_tokens: int = 512
+    chunk_overlap_tokens: int = 50
 
 
 class ProjectListResponse(BaseModel):

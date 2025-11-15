@@ -328,6 +328,12 @@ export default function ProjectPage() {
                   </p>
                 </div>
               </div>
+              <button
+                onClick={() => navigate(`/projects/${projectId}/settings`)}
+                className="w-full mt-4 bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-700 transition"
+              >
+                Admin Settings
+              </button>
             </div>
           </div>
         </div>
