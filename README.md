@@ -119,8 +119,8 @@ rag gc
 # Rebuild vector index
 rag reindex --drop
 
-# Start web server (coming soon)
-rag serve --host 0.0.0.0 --port 8000
+# Start web server
+rag serve --host 0.0.0.0 --port 8001
 ```
 
 ## CLI Commands

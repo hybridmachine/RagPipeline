@@ -214,8 +214,8 @@ async def embed_project(
                 continue
 
             # Chunk the file
-            chunks = chunker.chunk(
-                content, doc_path=scanned_file.relative_path
+            chunks = chunker.chunk_text(
+                content, doc_path=str(scanned_file.relative_path)
             )
 
             chunk_count = len(chunks)

@@ -7,9 +7,11 @@ This directory contains the FastAPI backend and React frontend for the RAG Pipel
 ### Backend (FastAPI)
 ```bash
 # From project root
-python -m web.app
-# Or with uvicorn
-uvicorn web.app:app --reload --port 8001
+# Option 1: Using CLI command (recommended)
+rag serve --host 0.0.0.0 --port 8001 --reload
+
+# Option 2: Using uvicorn directly
+python -m uvicorn web.app:app --reload --port 8001
 ```
 
 ### Frontend (React + Vite)
