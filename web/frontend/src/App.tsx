@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardPage from './pages/DashboardPage'
 import ProjectPage from './pages/ProjectPage'
+import AdminSettingsPage from './pages/AdminSettingsPage'
 import PrivateRoute from './components/PrivateRoute'
 
 function App() {
@@ -36,6 +37,14 @@ function App() {
           element={
             <PrivateRoute>
               <ProjectPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/projects/:projectId/settings"
+          element={
+            <PrivateRoute>
+              <AdminSettingsPage />
             </PrivateRoute>
           }
         />

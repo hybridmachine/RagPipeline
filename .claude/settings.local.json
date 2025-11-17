@@ -15,7 +15,9 @@
       "Bash(python -m pytest tests/ -v --tb=short)",
       "Bash(pip-audit)",
       "Bash(npm audit:*)",
-      "Bash(npm outdated:*)"
+      "Bash(npm outdated:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

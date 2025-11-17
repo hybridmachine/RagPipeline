@@ -58,6 +58,12 @@ async def create_project(
             description=project.description,
             embed_model_id=project.embed_model_id,
             llm_model_id=project.llm_model_id,
+            hf_endpoint_url=project.hf_endpoint_url,
+            hf_api_token_set=bool(project.hf_api_token),
+            llm_endpoint_url=project.llm_endpoint_url,
+            llm_api_token_set=bool(project.llm_api_token),
+            chunk_target_tokens=project.chunk_target_tokens,
+            chunk_overlap_tokens=project.chunk_overlap_tokens,
         )
     except ValueError as e:
         raise HTTPException(
@@ -89,6 +95,12 @@ async def list_projects(
                 description=p.description,
                 embed_model_id=p.embed_model_id,
                 llm_model_id=p.llm_model_id,
+                hf_endpoint_url=p.hf_endpoint_url,
+                hf_api_token_set=bool(p.hf_api_token),
+                llm_endpoint_url=p.llm_endpoint_url,
+                llm_api_token_set=bool(p.llm_api_token),
+                chunk_target_tokens=p.chunk_target_tokens,
+                chunk_overlap_tokens=p.chunk_overlap_tokens,
             )
             for p in projects
         ],
@@ -183,6 +195,12 @@ async def update_project(
             description=project.description,
             embed_model_id=project.embed_model_id,
             llm_model_id=project.llm_model_id,
+            hf_endpoint_url=project.hf_endpoint_url,
+            hf_api_token_set=bool(project.hf_api_token),
+            llm_endpoint_url=project.llm_endpoint_url,
+            llm_api_token_set=bool(project.llm_api_token),
+            chunk_target_tokens=project.chunk_target_tokens,
+            chunk_overlap_tokens=project.chunk_overlap_tokens,
         )
     except ValueError as e:
         raise HTTPException(

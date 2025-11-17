@@ -23,11 +23,14 @@ A complete RAG (Retrieval-Augmented Generation) system with automatic document e
 export HF_API_TOKEN="your_huggingface_token"
 export OPENAI_API_KEY="your_openai_key"
 
-# Start the web server
-python -m web.main
+# Option 1: Using CLI command (recommended)
+rag serve --host 0.0.0.0 --port 8001
 
-# Server runs on http://localhost:8000
-# API docs at http://localhost:8000/docs
+# Option 2: Using uvicorn directly
+python -m uvicorn web.app:app --host 0.0.0.0 --port 8001
+
+# Server runs on http://localhost:8001
+# API docs at http://localhost:8001/docs
 ```
 
 ### Frontend
@@ -210,19 +213,19 @@ echo "Authentication is done with JWT tokens" > test.txt
 curl -X POST \
   -H "Authorization: Bearer {token}" \
   -F "file=@test.txt" \
-  http://localhost:8000/api/projects/{project_id}/files/upload
+  http://localhost:8001/api/projects/{project_id}/files/upload
 
 # 3. Check embedding
 curl -X POST \
   -H "Authorization: Bearer {token}" \
-  http://localhost:8000/api/projects/{project_id}/embed
+  http://localhost:8001/api/projects/{project_id}/embed
 
 # 4. Query
 curl -X POST \
   -H "Authorization: Bearer {token}" \
   -H "Content-Type: application/json" \
   -d '{"query": "How is authentication done?"}' \
-  http://localhost:8000/api/projects/{project_id}/query
+  http://localhost:8001/api/projects/{project_id}/query
 ```
 
 ## Troubleshooting
@@ -259,7 +262,7 @@ curl -X POST \
 ```
 React Frontend (http://localhost:3000)
     ↓
-FastAPI Backend (http://localhost:8000)
+FastAPI Backend (http://localhost:8001)
     ├─ File upload → FileStore (content-addressable)
     ├─ Embed endpoint → HuggingFace (embeddings)
     ├─ Query endpoint → Vector search + OpenAI (LLM)
